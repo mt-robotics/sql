@@ -1,32 +1,32 @@
 # Content
-- Introduction to SQL
-- SQL Categories
-  - DQL
-  - DML
-  - DDL
-  - DCL
-  - TCL
-- SQL Clauses
-- SQL Functions
-  - Aggregate Functions
-  - String Functions
-  - Date Functions
-  - Numeric Functions
-  - Conversion Functions
-  - Conditional Functions
-  - Mathematical Functions
-  - System Functions
-- Other SQL Concepts
-  - Operators
-  - Indexes
-  - Constraints
-  - Views
-  - Stored Procedures and Functions
-  - Triggers
-  - Transactions
-- SQL Service INSTALLATION
-- Other
-- Hierarchical Structure of Databases
+- [Introduction to SQL](#introduction-to-sql)
+- [SQL Categories](#sql-categories)
+  - [DQL](#dql)
+  - [DML](#dml)
+  - [DDL](#ddl)
+  - [DCL](#dcl)
+  - [TCL](#tcl)
+- [SQL Clauses](#sql-clauses)
+- [SQL Functions](#sql-functions)
+  - [Aggregate Functions](#aggregate-functions)
+  - [String Functions](#string-functions)
+  - [Date Functions](#date-functions)
+  - [Numeric Functions](#numeric-functions)
+  - [Conversion Functions](#conversion-functions)
+  - [Conditional Functions](#conditional-functions)
+  - [Mathematical Functions](#mathematical-functions)
+  - [System Functions](#system-functions)
+- [Other SQL Concepts](#other-sql-concepts)
+  - [Operators](#operators)
+  - [Indexes](#indexes)
+  - [Constraints](#constraints)
+  - [Views](#views)
+  - [Stored Procedures and Functions](#stored-procedures-and-functions)
+  - [Triggers](#triggers)
+  - [Transactions](#transactions)
+- [SQL Service INSTALLATION](#sql-service-installation)
+- [Other SQL Concepts](#other-sql-concepts)
+- [Hierarchical Structure of Databases](#hierarchical-structure-of-databases)
 
 
 
@@ -37,12 +37,12 @@
 ## `SQL` vs `NoSQL`
 
 - SQL: `Structured Query Language`, used for storing `Structured Data`
-- NoSQL: `Not Only SQL`, used for storing `Unstructured Data`. It is a family of database management systems designed to handle the unique challenges posed by Big Data.
+- NoSQL: `Not Only SQL`, used for storing `Not Necessarily Structured Data`. It is a family of database management systems designed to handle the unique challenges posed by Big Data.
 
 
 
 ## SQL Standard
-`ANSI` SQL is the standard for the SQL. It is used by "American National Standards Institute"
+`ANSI` SQL is the standard for the SQL. It was created by "American National Standards Institute"
 
 
 
@@ -57,10 +57,10 @@ There are four categories of SQL:
   - DELETE
 
 - DDL (Data Definition Language)
-  - CREATE TABLE
-  - ALTER TABLE
-  - DROP TABLE
-  - TRUNCATE TABLE
+  - CREATE
+  - ALTER
+  - DROP
+  - TRUNCATE
 
 - DCL (Data Control Language)
   - GRANT
@@ -81,7 +81,7 @@ There are four categories of SQL:
 select last_name last_nm, first_name as first_nm
 from public.actor;
 
--- `as` is used to set alias, which can be omitted
+-- `as` is an optional clause or command used to set a column's alias
 ```
 
 #### DISTINCT
@@ -105,51 +105,19 @@ However, if there are more than one columns, the use of () is wrong:
 ```sql
 -- this is the correct way
 SELECT DISTINCT film_id, store_id from inventory;
+```
+Output:
+![alt text](images/distinct_right.png)
 
--- this is the wrong way
+```sql
+-- this is the wrong way, which results in an error
 SELECT DISTINCT(film_id, store_id) from inventory; -- notice there is no space between `DISTINCT` and `(`
 
 -- this one is not wrong, yet will return a series of tuples
 SELECT DISTINCT (film_id, store_id) from inventory;
 ```
-
-The series of tuples is like this
-```plaintext
-"["1","1"]"
-"["1","2"]"
-"["2","2"]"
-"["3","2"]"
-"["4","1"]"
-"["4","2"]"
-"["5","2"]"
-"["6","1"]"
-"["6","2"]"
-"["7","1"]"
-"["7","2"]"
-"["8","2"]"
-"["9","1"]"
-"["9","2"]"
-"["10","1"]"
-"["10","2"]"
-"["11","1"]"
-"["11","2"]"
-"["12","1"]"
-"["12","2"]"
-"["13","2"]"
-"["15","1"]"
-"["15","2"]"
-"["16","1"]"
-"["16","2"]"
-"["17","1"]"
-"["17","2"]"
-"["18","1"]"
-"["18","2"]"
-"["19","1"]"
-"["19","2"]"
-"["20","1"]"
-...
-"["1000","1"]"
-```
+Output:
+![alt text](images/distinct_wrong.png)
 
 `"["1","1"]"` means that there is one or more rows where `film_id` is `1` and `store_id` is `1`, the `DISTINCT` command will only return one row, hence `"["1","1"]"`.
 
@@ -164,10 +132,88 @@ The series of tuples is like this
 
 > Using an alias defined in the SELECT clause directly in the WHERE clause will result in an error, because it's not allowed in query. To achieve the same result, use sub-queries.
 
+Example 1: Create a report showing the actors that have been in more films than average
+```sql
+-- Solution 1: Using sub-queries
+select fa.actor_id, concat(a.first_name, ' ', a.last_name), count(distinct film_id) as num_films
+from film_actor fa
+inner join actor a on a.actor_id = fa.actor_id
+group by 1, 2
+having count(distinct film_id) > ( 
+	select avg(num_films)
+	from (
+		select actor_id, count(distinct film_id) as num_films
+		from film_actor
+		group by 1
+	) as subquery
+)
+order by 3 desc
+;
+
+-- Solution 2: Using CTE
+with 
+actor_film_counts as (
+	select actor_id, count(distinct film_id) as num_films
+	from film_actor
+	group by 1
+),
+average_films as (
+	select avg(num_films) as avg_films
+	from actor_film_counts
+)
+
+select afc.actor_id, concat(a.first_name, ' ', a.last_name), afc.num_films
+from actor_film_counts afc
+inner join actor a on a.actor_id = afc.actor_id
+where num_films > (select avg_films from average_films)
+order by 3 desc
+;
+
+-- Solution 3: Using Window Functions
+select film_counts.actor_id, concat(a.first_name, ' ', a.last_name), film_counts.num_films
+from (
+	select actor_id, count(distinct film_id) as num_films, avg(count(distinct film_id)) over () as avg_films
+	from film_actor
+	group by 1
+) as film_counts
+inner join actor a on a.actor_id = film_counts.actor_id
+where film_counts.num_films > avg_films
+order by 3 desc
+;
+```
+
+
+Example 2: Find the film ids that have more copies in inventory in Store 1 than in Store 2
+```sql
+select tb.film_id, f.title
+from (
+	select tb1.film_id, tb1.num_copies as num_copies_1, tb2.num_copies as num_copies_2
+	from (
+		select film_id, count(1) as num_copies
+		from inventory
+		where store_id=1
+		group by 1
+	) tb1
+	inner join (
+		select film_id, count(1) as num_copies
+		from inventory
+		where store_id=2
+		group by 1
+	) tb2 on tb1.film_id = tb2.film_id
+) as tb
+left join film f on f.film_id = tb.film_id
+where tb.num_copies_1 > coalesce(tb.num_copies_2, 0)
+;
+-- using LEFT JOIN and COALESCE ensures that there are no films that are in Store 2 but not in Store 1
+```
+
+
+
 
 
 #### CASE WHEN
-Find the percentage difference in payment amounts from March to April 2007 (method 1):
+
+Example: Find the percentage difference in payment amounts from March to April 2007 (method 1):
 ```sql
 select
   sum(case when date_trunc('Month', payment_date) = '2007-03-01' then amount else 0 end) as march_payment,
@@ -175,6 +221,20 @@ select
   ((sum(case when date_trunc('Month', payment_date) = '2007-04-01' then amount else 0 end) - sum(case when date_trunc('Month', payment_date) = '2007-03-01' then amount else 0 end)) / sum(case when date_trunc('Month', payment_date) = '2007-03-01' then amount else 0 end)) * 100 as percentage_difference
 from payment;
 ```
+
+**Tip**
+> Use `AVG()` and `CASE WHEN` to find the percentage of a particular item as part of the total:
+```sql
+select avg(case when rating in ('G', 'PG') then 1.0 else 0.0 end) from film;
+-- Create a new column by assigning a numerical value 1.0 for 'G' or 'PG' rating, and 0.0 otherwise. Having the numbers, the SQL can then find the average of 'G' and 'PG' as part of the total. A very smart way to calculate the percentage.
+```
+
+> Use `SUM()` and `CASE WHEN` to count the number of a particular items in column:
+```sql
+select sum(case when rating in ('G', 'PG') then 1 else 0 end) from film;
+```
+
+
 
 
 
@@ -629,7 +689,7 @@ order by sum(amount) desc;
 ```
 
 OUTPUT:
-![alt text](sum_of_payment_by_month.png)
+![alt text](images/sum_of_payment_by_month.png)
 
 
 
@@ -683,6 +743,13 @@ select title, right(title, 2) from film;
 ```
 
 
+
+### SPLIT_PART()
+```sql
+select title, split_part(title, ' ', 2) from film;
+```
+
+
 ## Numeric Functions
 
 
@@ -695,6 +762,14 @@ select title, right(title, 2) from film;
 select cast(count(*) as decimal) / (select count(*) from film) as proportion_g_pg
 from film
 where rating in ('PG', 'G');
+```
+
+### Convert an integer to a decimal number by multiplying `1.0`
+```sql
+select count(*) * 1.0
+from film
+where rating in ('G', 'PG')
+;
 ```
 
 
@@ -720,6 +795,73 @@ select coalesce(address2, 'unknown') from address;
 
 
 
+## Window Functions
+Powerful tools for performing calculations across a set of table rows related to the current row.
+
+The OVER clause defines the window or set of rows over which the function operates
+
+### Use Case 1: Aggregation with OVER (Calculating Average)
+```sql
+select actor_id, count(distinct film_id) as film_counts, 
+       avg(count(distinct film_id)) over () as avg_films
+from film_actor
+group by 1
+;
+```
+**Explanation:**
+
+- Purpose: This query calculates the number of distinct films each actor has appeared in (film_counts) and the average number of distinct films across all actors (avg_films).
+- Window Function: avg(count(distinct film_id)) over () is a window function. The OVER () clause without any PARTITION BY or ORDER BY specifies that the average should be calculated over the entire result set.
+- Behavior:
+- count(distinct film_id) is aggregated per actor_id due to the GROUP BY.
+- The avg() window function calculates the average of the film_counts for all actors, and this average is then repeated for each actor in the result.
+
+**Key Points:**
+
+- Global Context: The avg() calculation considers the entire dataset (OVER () means no specific partitioning).
+- Repeated Values: The same average value (avg_films) is repeated for every row in the result.
+
+
+
+
+### Use Case 2: Row Numbering with OVER (Partitioning Rows)
+```sql
+select row_number() over (partition by customer_id) as row_num, a.*
+from rental a
+;
+```
+
+**Explanation:**
+- Purpose: This query generates a sequential row number for each row within each customer_id partition in the rental table.
+- Window Function: row_number() over (partition by customer_id) is a window function that assigns a unique row number to each row within its customer_id group.
+- Behavior:
+- Partitioning: The PARTITION BY customer_id clause divides the result set into partitions based on customer_id. Within each partition, rows are numbered starting from 1.
+- Ordering: Without an ORDER BY clause, the order in which rows are numbered within each partition is not guaranteed. You can add ORDER BY within the OVER clause to define the specific order.
+
+**Key Points:**
+- Partitioned Context: The row numbers are calculated independently within each partition (customer_id).
+- Unique Row Numbers: Each row within the same customer_id partition gets a unique number starting from 1, incremented by 1 for each subsequent row.
+
+
+Summary of Differences:
+
+1. Context:
+- Use Case 1: The calculation (`avg()`) is applied globally across the entire result set.
+- Use Case 2: The calculation (`row_number()`) is applied within partitions (groups of `customer_id`).
+2. Function Type:
+- Use Case 1: The window function is performing an `aggregate operation over the window`.
+- Use Case 2: The window function is performing a `ranking operation within the partition`.
+3. Repetition vs. Uniqueness:
+- Use Case 1: The result of the window function (`avg()`) is the same for each row in the result set.
+- Use Case 2: The result of the window function (`row_number()`) is unique for each row within a partition.
+
+Window functions like these are incredibly versatile and can be used for a wide range of analytical tasks in SQL, from ranking rows to computing moving averages, cumulative sums, and much more.
+
+
+
+
+
+
 ## System Functions
 
 
@@ -730,12 +872,16 @@ select coalesce(address2, 'unknown') from address;
 
 ## Operators
 
+
+
+
+
 ### Arithmetic Operators
 `+`, `-`, `*`, `/`, `**`, `%`
 
 ```sql
 select film_id, title, round(rental_rate / rental_duration, 2) as rental_rate_per_day
-from film;
+from film; 
 ```
 
 
@@ -837,8 +983,8 @@ services:
     image: dpage/pgadmin4
     restart: always
     environment:
-      PGADMIN_DEFAULT_EMAIL: monireach.tang@gmail.com
-      PGADMIN_DEFAULT_PASSWORD: MonireachSecuredPassword
+      PGADMIN_DEFAULT_EMAIL: <email_address>
+      PGADMIN_DEFAULT_PASSWORD: <pgadmin4_password>
     ports:
       - "8081:80"
     depends_on:
@@ -853,7 +999,7 @@ volumes:
 ### Use the `pgadmin` service to connect to the `postgres` service
 In the browser, go to `http://localhost:8081`
 
-Login with `monireach.tang@gmail.com` and `MonireachSecuredPassword`
+Login with `<email_address>` and `<pgadmin4_password>`
 
 Click on “Add New Server” (in the home interface)
 
@@ -872,7 +1018,7 @@ Fill in teh details:
 ### PostgreSQL error
 After restoring the database using the interface and checking for the database in the docker container, we get the following error:
 
-![alt text](db_not_exist_error.png)
+![alt text](images/db_not_exist_error.png)
 
 
 
