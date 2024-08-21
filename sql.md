@@ -15,6 +15,7 @@
   - [Conversion Functions](#conversion-functions)
   - [Conditional Functions](#conditional-functions)
   - [Mathematical Functions](#mathematical-functions)
+  - [Window Functions](#window-functions) 
   - [System Functions](#system-functions)
 - [Other SQL Concepts](#other-sql-concepts)
   - [Operators](#operators)
@@ -24,6 +25,7 @@
   - [Stored Procedures and Functions](#stored-procedures-and-functions)
   - [Triggers](#triggers)
   - [Transactions](#transactions)
+- [Testing SQL](#testing-sql)
 - [SQL Service INSTALLATION](#sql-service-installation)
 - [Other SQL Concepts](#other-sql-concepts)
 - [Hierarchical Structure of Databases](#hierarchical-structure-of-databases)
@@ -796,14 +798,19 @@ select coalesce(address2, 'unknown') from address;
 
 
 ## Window Functions
-Powerful tools for performing calculations across a set of table rows related to the current row.
+Window functions in SQL are indeed powerful tools that allow  calculations across a set of table rows that are related to the current row. Unlike aggregate functions, which return a single value for a group of rows, window functions can return a value for each row in the result set, allowing us to see how the row relates to the entire set.
 
-The OVER clause defines the window or set of rows over which the function operates
+In simpler terms:
+- Window functions operate on a “window” or subset of rows and produce results that are attached to each row in that window.
+- They enable calculations like `running totals`, `ranking`, or `moving averages` that are based on the window of data for each row.
+
+The OVER clause is used to defines the window or set of rows over which the function operates.
 
 ### Use Case 1: Aggregation with OVER (Calculating Average)
 ```sql
-select actor_id, count(distinct film_id) as film_counts, 
-       avg(count(distinct film_id)) over () as avg_films
+select actor_id
+, count(distinct film_id) as film_counts
+, avg(count(distinct film_id)) over () as avg_films
 from film_actor
 group by 1
 ;
@@ -826,17 +833,17 @@ group by 1
 
 ### Use Case 2: Row Numbering with OVER (Partitioning Rows)
 ```sql
-select row_number() over (partition by customer_id) as row_num, a.*
+select row_number() over (partition by customer_id order by rental_id) as row_num, a.*
 from rental a
 ;
 ```
 
 **Explanation:**
 - Purpose: This query generates a sequential row number for each row within each customer_id partition in the rental table.
-- Window Function: row_number() over (partition by customer_id) is a window function that assigns a unique row number to each row within its customer_id group.
+- Window Function: row_number() over (partition by customer_id order by rental_id) is a window function that assigns a unique row number to each row order by rental_id within its customer_id group.
 - Behavior:
 - Partitioning: The PARTITION BY customer_id clause divides the result set into partitions based on customer_id. Within each partition, rows are numbered starting from 1.
-- Ordering: Without an ORDER BY clause, the order in which rows are numbered within each partition is not guaranteed. You can add ORDER BY within the OVER clause to define the specific order.
+- Ordering: With an ORDER BY clause, the order in which rows are numbered within each partition is guaranteed. In this case, it orders by rental_id of the dataset.
 
 **Key Points:**
 - Partitioned Context: The row numbers are calculated independently within each partition (customer_id).
@@ -857,6 +864,36 @@ Summary of Differences:
 
 Window functions like these are incredibly versatile and can be used for a wide range of analytical tasks in SQL, from ranking rows to computing moving averages, cumulative sums, and much more.
 
+
+
+
+
+### Other examples
+
+Count over partitions by customer_id:
+```sql
+select count(1) over (partition by customer_id), a.*
+from rental a
+;
+```
+This method keeps all details of each row in the result with an extra `count` column:
+![alt text](images/count_over_partition.png)
+
+To find the number of rows where `customer_id = 1`, we can also use `group by`:
+```sql
+select customer_id, count(1)
+from rental
+group by 1
+```
+This method gets rid of all other columns in the output except the `group by` column:
+![alt text](images/group_by_compare_to_over.png)
+
+We can even perform more complex operations on `partition` like using multiple columns:
+```sql
+select count(1) over (partition by customer_id, staff_id), a.*
+from rental a
+;
+```
 
 
 
@@ -952,6 +989,94 @@ CREATE TRIGGER last_updated
 - `BEGIN TRANSACTION`: Start a transaction
 - `COMMIT`: Commit changes
 - `ROLLBACK`: Undo changes
+
+
+
+
+
+# Testing SQL
+
+## Accidental Duplication
+
+```sql
+-- let's create a table with deliberate duplications
+create customer_with_dups as 
+select * 
+from customer 
+UNION ALL
+select * from customer
+where customer_id in (1, 2, 3)
+;
+
+select count(1)
+from (
+  select r.*, cwd.*
+  from rental r
+  inner join customer_with_dups cwd on r.customer_id = cwd.customer_id
+); -- 16151 rows
+
+select count(1) from rental; -- 16044 rows only
+```
+
+Because the customer_with_dups table has duplications, the join will also result in duplications. 
+
+To fix this, we can use `row_number()` in the Window Function to filter out duplicates. 
+
+How does `row_number()` work with Window Function?
+
+Let's check with `customer_id=2` using `row_number()` and Window Function: 
+```sql
+select row_number() over (partition by rental_id) as rn, r.*, cwd.*
+from rental r
+inner join customer_with_dups cwd on r.customer_id = cwd.customer_id
+where customer_id = 2
+;
+```
+
+Output:
+![alt text](images/duplications.png)
+we see that the rn column has {1; 2} rows repeatedly which shows duplications. We are only interested in the first row (rn=1)
+
+```sql
+select * 
+from (
+  select row_number() over (partition by rental_id) rn, r.*, cwd.*
+  from rental a
+  inner join customer_with_dups cwd on r.customer_id = cwd.customer_id
+) tb
+where rn = 1
+;  -- 16044 rows
+```
+
+Now the duplicated rows have been filtered out.
+
+
+## Missing Data
+
+If we are not sure a table has missing values, use `LEFT JOIN` or `RIGHT JOIN`. Example we are not sure if `customer_with_missing` tables has missing data:
+
+```sql
+select sum(total)
+from (
+	select first_name, last_name, sum(amount) as total
+	from payment p
+	left join customer_with_missing cwm on p.customer_id = cwm.customer_id
+	group by 1, 2
+	order by 1
+)
+;
+
+-- The sum amount will be exactly the same as:
+select sum(total)
+from (
+	select first_name, last_name, sum(amount) as total
+	from payment p
+	inner join customer c on p.customer_id = c.customer_id
+	group by 1, 2
+	order by 1
+)
+;
+```
 
 
 
